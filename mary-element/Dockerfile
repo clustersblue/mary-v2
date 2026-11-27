@@ -6,6 +6,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
 COPY . .
+ENV NODE_OPTIONS=--max-old-space-size=1536
 RUN npm run build
 
 FROM nginx:stable-alpine
