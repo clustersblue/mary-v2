@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.env
+.env.*
+storage/
+tests/
+test_*.py
+scratch_check_db.py
+verify_hash.py
+.git
+*.md

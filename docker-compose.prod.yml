@@ -1,0 +1,114 @@
+# Production stack. On the droplet, from this directory:
+#   docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+# Ports 80 and 443 are the only published ports.
+
+name: mary-prod
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  frontend:
+    build:
+      context: ./mary-element
+    image: mary-frontend:${IMAGE_TAG:-prod}
+    init: true
+    restart: unless-stopped
+    expose:
+      - "8080"
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    logging: *logging
+
+  backend:
+    build:
+      context: ./mary-fastapi
+    image: mary-backend:${IMAGE_TAG:-prod}
+    init: true
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      ENVIRONMENT: production
+      AUTO_CREATE_TABLES: "false"
+      SESSION_MEMORY_FALLBACK: "false"
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    expose:
+      - "8000"
+    volumes:
+      - ${STORAGE_HOST_PATH:-/var/mary/storage}:/app/storage
+      - ${MYSQL_CA_PATH:-/var/mary/certs/ca-certificate.crt}:/etc/ssl/certs/do-mysql-ca.crt:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
+
+  proxy:
+    build:
+      context: ./deploy
+      dockerfile: proxy/Dockerfile
+    image: mary-proxy:${IMAGE_TAG:-prod}
+    init: true
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - proxy_certs:/etc/nginx/certs
+      - letsencrypt:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    logging: *logging
+
+  certbot:
+    image: certbot/certbot:v2.11.0
+    profiles: ["tls"]
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint: ["certbot"]
+
+volumes:
+  redis_data:
+  proxy_certs:
+  letsencrypt:
+  certbot_www:

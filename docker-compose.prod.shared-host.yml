@@ -1,0 +1,12 @@
+# Use this file on the droplet that already runs Apache on ports 80 and 443.
+# It publishes the new app on localhost only. Apache forwards one hostname to these ports.
+# Do not start the proxy service from docker-compose.prod.yml. That service binds 80 and 443.
+
+services:
+  frontend:
+    ports:
+      - "127.0.0.1:18080:8080"
+
+  backend:
+    ports:
+      - "127.0.0.1:18000:8000"
